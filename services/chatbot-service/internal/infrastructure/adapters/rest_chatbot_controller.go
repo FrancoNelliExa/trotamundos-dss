@@ -24,15 +24,23 @@ type ConsultaRequest struct {
 	MensajeUsuario string `json:"mensajeUsuario"`
 }
 
+type ChatbotRepository interface {
+	EnsureSession(ctx context.Context, sesionID, usuarioID string) error
+	SaveMessage(ctx context.Context, mensajeID, sesionID, emisor, contenido string) error
+	MarkSessionEscalated(ctx context.Context, sesionID string) error
+	SaveTicket(ctx context.Context, tk outbox.TicketRecord) error
+	ListTicketsByUser(ctx context.Context, usuarioID string) ([]outbox.TicketRecord, error)
+}
+
 type RestChatbotController struct {
-	repo            *outbox.PGOutboxRepository
+	repo            ChatbotRepository
 	itineraryClient *ItineraryClient
 	agencyClient    *AgencyWebhookClient
 	kafkaWriter     *kafkago.Writer
 }
 
 func NewRestChatbotController(
-	repo *outbox.PGOutboxRepository,
+	repo ChatbotRepository,
 	itineraryClient *ItineraryClient,
 	agencyClient *AgencyWebhookClient,
 	kafkaWriter *kafkago.Writer,
@@ -71,17 +79,26 @@ func (c *RestChatbotController) handleConsulta(w http.ResponseWriter, r *http.Re
 	}
 
 	ctx := r.Context()
+	resCtx, err := c.itineraryClient.FetchReservationContext(ctx, req.UsuarioID, req.ReservaID)
+	if errors.Is(err, ErrForbiddenReservation) {
+		httputil.WriteProblem(w, r, http.StatusForbidden, "FORBIDDEN", "Acceso denegado a la reserva.", "No tiene permisos para consultar una reserva de otro viajero.")
+		return
+	}
+	if err != nil {
+		slog.Warn("could not fetch reservation context, continuing gracefully", "err", err)
+	}
+
 	sesionID := "ses_" + req.UsuarioID
 	if err := c.repo.EnsureSession(ctx, sesionID, req.UsuarioID); err != nil {
+		if strings.Contains(err.Error(), "23503") {
+			httputil.WriteProblem(w, r, http.StatusNotFound, "NOT_FOUND", "Usuario no encontrado.", "El usuarioId indicado no existe en la plataforma.")
+			return
+		}
 		httputil.WriteProblem(w, r, http.StatusInternalServerError, "SESSION_ERROR", "No se pudo iniciar sesión de chat.", err.Error())
 		return
 	}
 	_ = c.repo.SaveMessage(ctx, httputil.NewID("msg"), sesionID, "USUARIO", req.MensajeUsuario)
 
-	resCtx, err := c.itineraryClient.FetchReservationContext(ctx, req.UsuarioID, req.ReservaID)
-	if err != nil {
-		slog.Warn("could not fetch reservation context, continuing gracefully", "err", err)
-	}
 	var resInfo *domain.ReservationInfo
 	if resCtx != nil {
 		resInfo = &resCtx.Reserva
@@ -114,7 +131,7 @@ func (c *RestChatbotController) handleConsulta(w http.ResponseWriter, r *http.Re
 	reservaPayload := map[string]any{
 		"reservaId": req.ReservaID,
 	}
-	reservaID := req.ReservaID
+	reservaID := ""
 	if resCtx != nil {
 		userPayload = map[string]any{
 			"usuarioId": resCtx.Usuario.UsuarioID,

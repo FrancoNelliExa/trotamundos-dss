@@ -99,10 +99,21 @@ func (s *ItineraryApplicationService) GetConsolidatedItinerary(
 }
 
 func (s *ItineraryApplicationService) GetReservationContext(ctx context.Context, reservaID string) (models.ReservaContexto, error) {
+	return s.GetReservationContextForUser(ctx, "", reservaID)
+}
+
+func (s *ItineraryApplicationService) GetReservationContextForUser(ctx context.Context, callerUserID, reservaID string) (models.ReservaContexto, error) {
 	if reservaID == "" {
 		return models.ReservaContexto{}, fmt.Errorf("%w: reservaId es obligatorio", models.ErrValidation)
 	}
-	return s.repo.GetReservationContext(ctx, reservaID)
+	resCtx, err := s.repo.GetReservationContext(ctx, reservaID)
+	if err != nil {
+		return resCtx, err
+	}
+	if callerUserID != "" && resCtx.Usuario.UsuarioID != callerUserID {
+		return models.ReservaContexto{}, models.ErrForbidden
+	}
+	return resCtx, nil
 }
 
 func (s *ItineraryApplicationService) CreateTrip(
@@ -163,11 +174,27 @@ func (s *ItineraryApplicationService) CreateReservation(
 	idempotencyKey string,
 	input models.CreateReservationInput,
 ) (models.Reserva, error) {
+	return s.CreateReservationForUser(ctx, "", idempotencyKey, input)
+}
+
+func (s *ItineraryApplicationService) CreateReservationForUser(
+	ctx context.Context,
+	callerUserID, idempotencyKey string,
+	input models.CreateReservationInput,
+) (models.Reserva, error) {
 	if input.ViajeID == "" || input.TipoReserva == "" || input.Proveedor == "" || input.CodigoConfirmacion == "" {
 		return models.Reserva{}, fmt.Errorf("%w: viajeId, tipoReserva, proveedor y codigoConfirmacion son obligatorios", models.ErrValidation)
 	}
 	if input.FechaInicioUTC.IsZero() || input.FechaFinUTC.IsZero() || !input.FechaInicioUTC.Before(input.FechaFinUTC) {
 		return models.Reserva{}, fmt.Errorf("%w: fechaInicioUtc debe ser una fecha ISO 8601 válida y anterior a fechaFinUtc", models.ErrValidation)
+	}
+
+	trip, err := s.repo.GetTripByID(ctx, input.ViajeID)
+	if err != nil {
+		return models.Reserva{}, err
+	}
+	if callerUserID != "" && trip.UsuarioID != callerUserID {
+		return models.Reserva{}, models.ErrForbidden
 	}
 
 	reqHash := hashJSON(input)
@@ -184,11 +211,6 @@ func (s *ItineraryApplicationService) CreateReservation(
 			_ = json.Unmarshal(existing.ResponseBody, &saved)
 			return saved, nil
 		}
-	}
-
-	trip, err := s.repo.GetTripByID(ctx, input.ViajeID)
-	if err != nil {
-		return models.Reserva{}, err
 	}
 
 	tzOrig := input.ZonaHorariaOrigen
@@ -241,8 +263,21 @@ func (s *ItineraryApplicationService) CreateReservation(
 }
 
 func (s *ItineraryApplicationService) ArchiveTrip(ctx context.Context, viajeID string) (models.Viaje, error) {
+	return s.ArchiveTripForUser(ctx, "", viajeID)
+}
+
+func (s *ItineraryApplicationService) ArchiveTripForUser(ctx context.Context, callerUserID, viajeID string) (models.Viaje, error) {
 	if viajeID == "" {
 		return models.Viaje{}, fmt.Errorf("%w: viajeId es obligatorio", models.ErrValidation)
+	}
+	if callerUserID != "" {
+		existing, err := s.repo.GetTripByID(ctx, viajeID)
+		if err != nil {
+			return models.Viaje{}, err
+		}
+		if existing.UsuarioID != callerUserID {
+			return models.Viaje{}, models.ErrForbidden
+		}
 	}
 	trip, err := s.repo.ArchiveTrip(ctx, viajeID, time.Now().UTC())
 	if err != nil {

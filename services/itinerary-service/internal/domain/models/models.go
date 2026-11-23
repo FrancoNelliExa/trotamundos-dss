@@ -8,6 +8,7 @@ import (
 var (
 	ErrNotFound            = errors.New("resource not found")
 	ErrValidation          = errors.New("validation error")
+	ErrForbidden           = errors.New("forbidden")
 	ErrIdempotencyConflict = errors.New("idempotency key reused with different payload")
 )
 

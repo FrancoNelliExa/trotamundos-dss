@@ -3,12 +3,16 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/FrancoNelliExa/trotamundos-dss/services/chatbot-service/internal/domain"
 )
+
+var ErrForbiddenReservation = errors.New("reservation belongs to another user")
 
 type UserContext struct {
 	UsuarioID string `json:"usuarioId"`
@@ -36,7 +40,8 @@ func NewItineraryClient(baseURL string) *ItineraryClient {
 
 func (c *ItineraryClient) FetchReservationContext(ctx context.Context, usuarioID, reservaID string) (*ReservationContextResponse, error) {
 	if reservaID != "" {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/reservas/"+reservaID, nil)
+		endpoint := c.baseURL + "/api/v1/reservas/" + url.PathEscape(reservaID) + "?usuarioId=" + url.QueryEscape(usuarioID)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -45,6 +50,9 @@ func (c *ItineraryClient) FetchReservationContext(ctx context.Context, usuarioID
 			return nil, err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusForbidden {
+			return nil, ErrForbiddenReservation
+		}
 		if resp.StatusCode == http.StatusOK {
 			var out ReservationContextResponse
 			if err := json.NewDecoder(resp.Body).Decode(&out); err == nil {

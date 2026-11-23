@@ -250,3 +250,27 @@ func TestCreateReservation_IdempotencyConflict(t *testing.T) {
 		t.Fatalf("expected ErrIdempotencyConflict, got %v", err)
 	}
 }
+
+func TestOwnershipAuthorization_RejectsCrossUserMutations(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewItineraryApplicationService(repo, newFakeCache(), &fakePublisher{})
+
+	start := time.Date(2026, 11, 10, 8, 30, 0, 0, time.UTC)
+	end := time.Date(2026, 11, 10, 20, 15, 0, 0, time.UTC)
+	_, err := svc.CreateReservationForUser(context.Background(), "usr_otro", "idem-x", models.CreateReservationInput{
+		ViajeID:            "vj_5501",
+		TipoReserva:        "VUELO",
+		Proveedor:          "Iberia",
+		CodigoConfirmacion: "IB-99",
+		FechaInicioUTC:     start,
+		FechaFinUTC:        end,
+	})
+	if !errors.Is(err, models.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden on cross-user CreateReservation, got %v", err)
+	}
+
+	_, err = svc.ArchiveTripForUser(context.Background(), "usr_otro", "vj_5501")
+	if !errors.Is(err, models.ErrForbidden) {
+		t.Fatalf("expected ErrForbidden on cross-user ArchiveTrip, got %v", err)
+	}
+}

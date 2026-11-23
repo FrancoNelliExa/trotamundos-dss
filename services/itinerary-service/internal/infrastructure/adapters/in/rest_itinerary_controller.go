@@ -43,7 +43,11 @@ func (c *RestItineraryController) handleGetItinerary(w http.ResponseWriter, r *h
 
 func (c *RestItineraryController) handleGetReservationContext(w http.ResponseWriter, r *http.Request) {
 	reservaID := r.PathValue("reservaId")
-	ctxData, err := c.useCases.GetReservationContext(r.Context(), reservaID)
+	callerUserID := r.URL.Query().Get("usuarioId")
+	if callerUserID == "" {
+		callerUserID = r.Header.Get("X-Authenticated-User")
+	}
+	ctxData, err := c.useCases.GetReservationContextForUser(r.Context(), callerUserID, reservaID)
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
@@ -76,7 +80,8 @@ func (c *RestItineraryController) handleCreateReservation(w http.ResponseWriter,
 		httputil.WriteProblem(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Payload JSON inválido.", err.Error())
 		return
 	}
-	res, err := c.useCases.CreateReservation(r.Context(), r.Header.Get("Idempotency-Key"), input)
+	callerUserID := r.Header.Get("X-Authenticated-User")
+	res, err := c.useCases.CreateReservationForUser(r.Context(), callerUserID, r.Header.Get("Idempotency-Key"), input)
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
@@ -92,7 +97,8 @@ func (c *RestItineraryController) handleCreateReservation(w http.ResponseWriter,
 
 func (c *RestItineraryController) handleArchiveTrip(w http.ResponseWriter, r *http.Request) {
 	viajeID := r.PathValue("viajeId")
-	trip, err := c.useCases.ArchiveTrip(r.Context(), viajeID)
+	callerUserID := r.Header.Get("X-Authenticated-User")
+	trip, err := c.useCases.ArchiveTripForUser(r.Context(), callerUserID, viajeID)
 	if err != nil {
 		writeDomainError(w, r, err)
 		return
@@ -109,6 +115,8 @@ func writeDomainError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, models.ErrValidation):
 		httputil.WriteProblem(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "Los parámetros enviados no superaron las reglas de validación.", err.Error())
+	case errors.Is(err, models.ErrForbidden):
+		httputil.WriteProblem(w, r, http.StatusForbidden, "FORBIDDEN", "Acceso denegado.", "No tiene permisos sobre el viaje o reserva solicitada.")
 	case errors.Is(err, models.ErrNotFound):
 		httputil.WriteProblem(w, r, http.StatusNotFound, "NOT_FOUND", "Recurso no encontrado.", err.Error())
 	case errors.Is(err, models.ErrIdempotencyConflict):

@@ -51,6 +51,7 @@ func main() {
 		Topic:                  "chatbot.events",
 		Balancer:               &kafkago.Hash{},
 		AllowAutoTopicCreation: true,
+		Async:                  true,
 		WriteTimeout:           2 * time.Second,
 		BatchTimeout:           20 * time.Millisecond,
 	}

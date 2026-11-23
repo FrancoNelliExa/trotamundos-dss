@@ -20,6 +20,7 @@ func NewKafkaPublisher(broker, topic string) *KafkaPublisher {
 			Topic:                  topic,
 			Balancer:               &kafkago.Hash{},
 			AllowAutoTopicCreation: true,
+			Async:                  true,
 			WriteTimeout:           2 * time.Second,
 			BatchTimeout:           20 * time.Millisecond,
 		},

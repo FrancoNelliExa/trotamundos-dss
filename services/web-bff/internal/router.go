@@ -98,18 +98,36 @@ func NewRouter(auth *JWTManager, cfg RouterConfig) (http.Handler, error) {
 		if !auth.AuthorizeUser(w, r, r.PathValue("usuarioId")) {
 			return
 		}
+		r.Header.Set("X-Authenticated-User", auth.UserIDFromContext(r))
 		itinProxy.ServeHTTP(w, r)
 	})))
 
 	mux.Handle("POST /api/v1/viajes", auth.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			pkghttp.WriteProblem(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "No se pudo leer el cuerpo de la solicitud.", err.Error())
+			return
+		}
+		var probe struct {
+			UsuarioID string `json:"usuarioId"`
+		}
+		_ = json.Unmarshal(raw, &probe)
+		if probe.UsuarioID != "" && !auth.AuthorizeUser(w, r, probe.UsuarioID) {
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(raw))
+		r.ContentLength = int64(len(raw))
+		r.Header.Set("X-Authenticated-User", auth.UserIDFromContext(r))
 		itinProxy.ServeHTTP(w, r)
 	})))
 
 	mux.Handle("PUT /api/v1/viajes/{viajeId}/archivar", auth.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Authenticated-User", auth.UserIDFromContext(r))
 		itinProxy.ServeHTTP(w, r)
 	})))
 
 	mux.Handle("POST /api/v1/reservas", auth.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Authenticated-User", auth.UserIDFromContext(r))
 		itinProxy.ServeHTTP(w, r)
 	})))
 
@@ -129,6 +147,7 @@ func NewRouter(auth *JWTManager, cfg RouterConfig) (http.Handler, error) {
 		}
 		r.Body = io.NopCloser(bytes.NewReader(raw))
 		r.ContentLength = int64(len(raw))
+		r.Header.Set("X-Authenticated-User", auth.UserIDFromContext(r))
 		chatProxy.ServeHTTP(w, r)
 	})))
 
@@ -136,6 +155,7 @@ func NewRouter(auth *JWTManager, cfg RouterConfig) (http.Handler, error) {
 		if !auth.AuthorizeUser(w, r, r.PathValue("usuarioId")) {
 			return
 		}
+		r.Header.Set("X-Authenticated-User", auth.UserIDFromContext(r))
 		chatProxy.ServeHTTP(w, r)
 	})))
 

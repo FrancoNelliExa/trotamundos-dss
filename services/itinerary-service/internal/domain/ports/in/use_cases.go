@@ -9,7 +9,10 @@ import (
 type ItineraryUseCases interface {
 	GetConsolidatedItinerary(ctx context.Context, usuarioID, acceptLanguage string) (models.ItinerarioConsolidado, error)
 	GetReservationContext(ctx context.Context, reservaID string) (models.ReservaContexto, error)
+	GetReservationContextForUser(ctx context.Context, callerUserID, reservaID string) (models.ReservaContexto, error)
 	CreateTrip(ctx context.Context, idempotencyKey string, input models.CreateTripInput) (models.Viaje, error)
 	CreateReservation(ctx context.Context, idempotencyKey string, input models.CreateReservationInput) (models.Reserva, error)
+	CreateReservationForUser(ctx context.Context, callerUserID, idempotencyKey string, input models.CreateReservationInput) (models.Reserva, error)
 	ArchiveTrip(ctx context.Context, viajeID string) (models.Viaje, error)
+	ArchiveTripForUser(ctx context.Context, callerUserID, viajeID string) (models.Viaje, error)
 }
