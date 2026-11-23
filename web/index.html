@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trotamundos — Panel de Viajes y Asistente Virtual (Prototipo 2da Entrega)</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Trotamundos</h1>
+      <span class="subtitle">Prototipo Go · ADD 3.0 · Opción B (Chatbot + Circuit Breaker + Outbox)</span>
+    </div>
+    <div class="topbar-actions">
+      <span id="session-badge" class="badge badge-neutral">Autenticando…</span>
+      <a class="btn btn-outline" href="/docs" target="_blank" rel="noopener">OpenAPI / Swagger</a>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Columna Izquierda: Panel de Itinerarios (Redis Cache-Aside + Postgres) -->
+    <section class="card" aria-labelledby="itin-heading">
+      <div class="card-header">
+        <div>
+          <h2 id="itin-heading">Panel de Viajes</h2>
+          <p class="muted">Viajero: <strong>Nicola Satragni</strong> (<code>usr_9812a3</code>)</p>
+        </div>
+        <div class="header-controls">
+          <span id="cache-badge" class="badge badge-neutral">—</span>
+          <span id="latency-badge" class="badge badge-neutral">0 ms</span>
+          <button id="btn-refresh-itin" class="btn btn-secondary" type="button">Recargar</button>
+        </div>
+      </div>
+
+      <div id="itinerary-container" class="trip-list"></div>
+
+      <details class="collapsible">
+        <summary>+ Agregar reserva manual (invalida caché Redis y publica evento Kafka)</summary>
+        <form id="reservation-form" class="form-grid">
+          <label>
+            Tipo
+            <select name="tipoReserva" required>
+              <option value="VUELO">VUELO</option>
+              <option value="HOTEL">HOTEL</option>
+              <option value="TREN">TREN</option>
+              <option value="AUTO">AUTO</option>
+              <option value="BUS">BUS</option>
+            </select>
+          </label>
+          <label>
+            Proveedor
+            <input name="proveedor" type="text" placeholder="Ej. Renfe" required />
+          </label>
+          <label>
+            Código confirmación
+            <input name="codigoConfirmacion" type="text" placeholder="Ej. AVE-9042" required />
+          </label>
+          <label>
+            Monto / Moneda (ISO 4217)
+            <div class="inline-pair">
+              <input name="monto" type="number" step="0.01" value="89.50" required />
+              <select name="monedaIso">
+                <option value="EUR">EUR</option>
+                <option value="USD">USD</option>
+                <option value="ARS">ARS</option>
+              </select>
+            </div>
+          </label>
+          <button type="submit" class="btn btn-primary full-width">Guardar reserva</button>
+        </form>
+      </details>
+    </section>
+
+    <!-- Columna Derecha: Módulo Avanzado Opción B (Chatbot + Resiliencia) -->
+    <section class="card" aria-labelledby="chat-heading">
+      <div class="card-header">
+        <div>
+          <h2 id="chat-heading">Asistente Virtual (Opción B)</h2>
+          <p class="muted">Soporte Nivel 1 y derivación contextual a Agencia Preferida</p>
+        </div>
+        <div class="header-controls">
+          <span id="cb-badge" class="badge badge-ok">CB: CLOSED</span>
+        </div>
+      </div>
+
+      <!-- Control en vivo de la Agencia Mock -->
+      <div class="agency-bar" role="region" aria-label="Control de simulación de agencia externa">
+        <div class="agency-bar-title">
+          <strong>Agencia Externa (Mock):</strong>
+          <span id="agency-mode-label" class="muted">Saludable</span>
+        </div>
+        <div class="btn-group">
+          <button type="button" class="btn btn-sm" data-agency-mode="healthy">Saludable</button>
+          <button type="button" class="btn btn-sm" data-agency-mode="slow">Lenta (5s &gt; 2.5s)</button>
+          <button type="button" class="btn btn-sm btn-danger" data-agency-mode="error500">Caída (HTTP 500)</button>
+        </div>
+      </div>
+
+      <!-- Mensajes del Chat -->
+      <div id="chat-log" class="chat-log" aria-live="polite">
+        <div class="msg msg-bot">
+          Hola Nicola. Consultame por equipaje, check-in o estado de tu vuelo <strong>IB6844</strong>, o pedime una cancelación con reembolso para probar la derivación a tu agencia preferida.
+        </div>
+      </div>
+
+      <!-- Accesos rápidos de prueba -->
+      <div class="quick-prompts">
+        <button type="button" class="chip" data-prompt="¿Puedo agregar equipaje de mano a mi vuelo de Iberia?">Nivel 1: Equipaje</button>
+        <button type="button" class="chip" data-prompt="¿Cuál es el estado y puerta de embarque de mi vuelo?">Nivel 1: Estado vuelo</button>
+        <button type="button" class="chip chip-warn" data-prompt="Quiero cancelación con reembolso total por fuerza mayor">Complejo: Derivar a agencia</button>
+      </div>
+
+      <form id="chat-form" class="chat-form">
+        <label class="sr-only" for="chat-input">Mensaje al asistente</label>
+        <input id="chat-input" type="text" placeholder="Escribí tu consulta de viaje..." autocomplete="off" required />
+        <button type="submit" class="btn btn-primary">Enviar</button>
+      </form>
+
+      <!-- Tabla de Tickets y Cola Outbox -->
+      <div class="outbox-section">
+        <div class="outbox-header">
+          <h3>Tickets de Derivación / Cola Outbox</h3>
+          <button id="btn-refresh-tickets" type="button" class="btn btn-sm">Actualizar</button>
+        </div>
+        <div id="tickets-list" class="tickets-list">
+          <p class="muted">Sin derivaciones registradas todavía.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
