@@ -1,0 +1,276 @@
+openapi: 3.0.3
+info:
+  title: Trotamundos API Gateway Contracts (Prototipo 2da Entrega)
+  version: 1.0.0
+  description: Contratos OpenAPI 3.0 para el prototipo ejecutable en Go de Trotamundos (núcleo de itinerarios + módulo avanzado Opción B Chatbot con Circuit Breaker y Outbox).
+servers:
+  - url: http://localhost:8080
+    description: Web BFF local (Docker Compose)
+paths:
+  /api/v1/auth/demo-token:
+    post:
+      summary: Emitir token JWT RS256 para usuario demo
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                usuarioId:
+                  type: string
+                  example: usr_9812a3
+      responses:
+        '200':
+          description: Token JWT emitido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  usuarioId:
+                    type: string
+                  expiresInSeconds:
+                    type: integer
+
+  /api/v1/viajes:
+    post:
+      summary: Crear o agrupar un viaje (RF-05)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [usuarioId, nombreViaje, destinoPrincipal, fechaInicio, fechaFin]
+              properties:
+                usuarioId: { type: string }
+                nombreViaje: { type: string }
+                destinoPrincipal: { type: string }
+                fechaInicio: { type: string, format: date }
+                fechaFin: { type: string, format: date }
+      responses:
+        '201':
+          description: Viaje creado
+        '400':
+          $ref: '#/components/responses/ProblemError'
+        '401':
+          $ref: '#/components/responses/ProblemError'
+        '409':
+          $ref: '#/components/responses/ProblemError'
+
+  /api/v1/viajes/{viajeId}/archivar:
+    put:
+      summary: Archivar o completar un viaje (RF-05)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: viajeId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Viaje archivado
+        '404':
+          $ref: '#/components/responses/ProblemError'
+
+  /api/v1/reservas:
+    post:
+      summary: Crear reserva manual (RF-04)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          required: false
+          schema: { type: string, default: es-AR }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [viajeId, tipoReserva, proveedor, codigoConfirmacion, fechaInicioUtc, fechaFinUtc]
+              properties:
+                viajeId: { type: string }
+                tipoReserva: { type: string, enum: [VUELO, HOTEL, AUTO, TREN, BUS] }
+                proveedor: { type: string }
+                codigoConfirmacion: { type: string }
+                fechaInicioUtc: { type: string, format: date-time }
+                fechaFinUtc: { type: string, format: date-time }
+                zonaHorariaOrigen: { type: string, example: America/Argentina/Buenos_Aires }
+                zonaHorariaDestino: { type: string, example: Europe/Madrid }
+                monto: { type: number }
+                monedaIso: { type: string, example: USD }
+                detalles: { type: object }
+      responses:
+        '201':
+          description: Reserva creada
+        '400':
+          $ref: '#/components/responses/ProblemError'
+        '409':
+          $ref: '#/components/responses/ProblemError'
+
+  /api/v1/itinerarios/{usuarioId}:
+    get:
+      summary: Obtener itinerario consolidado del usuario (QA-01.A Cache-Aside Redis)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: usuarioId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: Accept-Language
+          in: header
+          required: false
+          schema: { type: string, default: es-AR }
+      responses:
+        '200':
+          description: Itinerario recuperado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItinerarioConsolidado'
+        '401':
+          $ref: '#/components/responses/ProblemError'
+        '403':
+          $ref: '#/components/responses/ProblemError'
+
+  /api/v1/chatbot/consulta:
+    post:
+      summary: Consultar al Asistente Virtual Nivel 1 o derivar a Agencia Preferida (Opción B - RF-08)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsultaChatbotRequest'
+      responses:
+        '200':
+          description: Respuesta generada o ticket de derivación emitido (directo u Outbox)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsultaChatbotResponse'
+        '400':
+          $ref: '#/components/responses/ProblemError'
+        '401':
+          $ref: '#/components/responses/ProblemError'
+
+  /api/v1/chatbot/tickets/{usuarioId}:
+    get:
+      summary: Listar tickets de derivación y estado de la Cola Outbox
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: usuarioId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de tickets (PENDIENTE, ENTREGADO, RESUELTO)
+
+  /api/v1/chatbot/circuit-status:
+    get:
+      summary: Consultar estado actual del Circuit Breaker hacia la Agencia Preferida
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Estado CLOSED / OPEN / HALF_OPEN y contador de fallos
+
+  /api/v1/demo/agency-mode:
+    get:
+      summary: Consultar modo actual de la Agencia Mock (healthy, slow, error500)
+      responses:
+        '200':
+          description: Modo actual
+    post:
+      summary: Cambiar modo de falla de la Agencia Mock para demostrar Circuit Breaker + Outbox
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode:
+                  type: string
+                  enum: [healthy, slow, error500]
+      responses:
+        '200':
+          description: Modo actualizado
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    ProblemError:
+      description: Error estándar RFC 7807
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              tipo: { type: string }
+              codigo: { type: string }
+              titulo: { type: string }
+              status: { type: integer }
+              detalle: { type: string }
+              instancia: { type: string }
+              requestId: { type: string }
+  schemas:
+    ItinerarioConsolidado:
+      type: object
+      required: [usuarioId, idioma, monedaPreferida, origenDatos, viajesActivos]
+      properties:
+        usuarioId: { type: string }
+        timestamp: { type: string, format: date-time }
+        idioma: { type: string, example: es-AR }
+        monedaPreferida: { type: string, example: USD }
+        origenDatos: { type: string, enum: [CACHE_HIT, CACHE_MISS] }
+        viajesActivos:
+          type: array
+          items: { type: object }
+    ConsultaChatbotRequest:
+      type: object
+      required: [usuarioId, mensajeUsuario]
+      properties:
+        usuarioId: { type: string }
+        reservaId: { type: string }
+        mensajeUsuario: { type: string, maxLength: 2000 }
+    ConsultaChatbotResponse:
+      type: object
+      required: [consultaId, respuestaBot, requiereDerivacion]
+      properties:
+        consultaId: { type: string }
+        respuestaBot: { type: string }
+        requiereDerivacion: { type: boolean }
+        agenciaDestino: { type: string, nullable: true }
+        ticketDerivacion: { type: string, nullable: true }
+        tiempoEstimadoRespuesta: { type: string, nullable: true }
+        estadoTicket: { type: string, nullable: true, enum: [ENTREGADO, PENDIENTE] }
+        circuitState: { type: string, nullable: true, enum: [CLOSED, OPEN, HALF_OPEN] }
